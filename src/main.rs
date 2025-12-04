@@ -512,7 +512,29 @@ impl App {
             let mem_clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Memory).unwrap_or(0);
 
             let pstate = device.performance_state()
-                .map(|p| format!("{:?}", p))
+                .map(|p| {
+                    // Convert PerformanceState enum to P-state string (P0, P1, etc.)
+                    use nvml_wrapper::enum_wrappers::device::PerformanceState;
+                    match p {
+                        PerformanceState::Zero => "P0",
+                        PerformanceState::One => "P1",
+                        PerformanceState::Two => "P2",
+                        PerformanceState::Three => "P3",
+                        PerformanceState::Four => "P4",
+                        PerformanceState::Five => "P5",
+                        PerformanceState::Six => "P6",
+                        PerformanceState::Seven => "P7",
+                        PerformanceState::Eight => "P8",
+                        PerformanceState::Nine => "P9",
+                        PerformanceState::Ten => "P10",
+                        PerformanceState::Eleven => "P11",
+                        PerformanceState::Twelve => "P12",
+                        PerformanceState::Thirteen => "P13",
+                        PerformanceState::Fourteen => "P14",
+                        PerformanceState::Fifteen => "P15",
+                        PerformanceState::Unknown => "P?",
+                    }.to_string()
+                })
                 .unwrap_or_else(|_| "?".into());
 
             gpus.push(GpuInfo {
