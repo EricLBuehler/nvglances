@@ -895,92 +895,159 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(if app.show_graphs && !app.compact_mode {
-            vec![
-                Constraint::Length(3),  // CPU gauge
-                Constraint::Length(3),  // Memory gauge
-                Constraint::Length(3),  // Swap gauge
-                Constraint::Length(8),  // CPU/Memory graphs (needs more height for braille)
-                Constraint::Length(5),  // Network
-                Constraint::Length(5),  // Disk
-                Constraint::Min(8),     // CPU Processes
-            ]
-        } else if app.compact_mode {
-            vec![
-                Constraint::Length(2),  // CPU + Memory compact
-                Constraint::Length(2),  // Network compact
-                Constraint::Min(8),     // CPU Processes
-            ]
-        } else {
-            vec![
-                Constraint::Length(3),  // CPU gauge
-                Constraint::Length(3),  // Memory gauge
-                Constraint::Length(3),  // Swap gauge
-                Constraint::Length(5),  // Network
-                Constraint::Length(5),  // Disk
-                Constraint::Min(8),     // CPU Processes
-            ]
-        })
-        .split(area);
+    let height = area.height as i32;
+    let width = area.width as i32;
 
-    let mut chunk_idx = 0;
+    // Auto-compact if terminal is very small
+    let auto_compact = height < 15 || width < 60;
+    let use_compact = app.compact_mode || auto_compact;
 
-    if app.compact_mode {
-        render_compact_cpu_mem(frame, chunks[chunk_idx], app);
-        chunk_idx += 1;
-        render_compact_network(frame, chunks[chunk_idx], app);
-        chunk_idx += 1;
+    // Adaptive layout based on available height
+    // Minimum heights: CPU(3) + MEM(3) + Processes(5) = 11
+    // With swap: +3 = 14
+    // With network: +4 = 18
+    // With disk: +4 = 22
+    // With graphs: +4 = 26
+
+    let show_swap = height >= 14 && !use_compact;
+    let show_network = height >= 18 && !use_compact;
+    let show_disk = height >= 22 && !use_compact;
+    // Show graphs even in smaller windows, just need minimum 4 rows for compact graph
+    let show_graphs_actual = app.show_graphs && height >= 12;
+    let graph_height = if height >= 28 { 6 } else { 4 };  // Shorter graph for smaller windows
+
+    if use_compact {
+        let mut constraints = vec![
+            Constraint::Length(1),  // CPU + Memory compact
+            Constraint::Length(1),  // Network compact
+        ];
+        if show_graphs_actual {
+            constraints.push(Constraint::Length(graph_height as u16));  // Compact graph
+        }
+        constraints.push(Constraint::Min(3));  // CPU Processes
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area);
+
+        let mut idx = 0;
+        render_compact_cpu_mem(frame, chunks[idx], app);
+        idx += 1;
+        render_compact_network(frame, chunks[idx], app);
+        idx += 1;
+        if show_graphs_actual {
+            render_cpu_mem_graph(frame, chunks[idx], app);
+            idx += 1;
+        }
+        render_cpu_processes(frame, chunks[idx], app);
     } else {
+        let mut constraints = vec![
+            Constraint::Length(3),  // CPU gauge
+            Constraint::Length(3),  // Memory gauge
+        ];
+
+        if show_swap {
+            constraints.push(Constraint::Length(3));  // Swap gauge
+        }
+        if show_graphs_actual {
+            constraints.push(Constraint::Length(graph_height as u16));  // CPU/Memory graphs
+        }
+        if show_network {
+            constraints.push(Constraint::Length(4));  // Network
+        }
+        if show_disk {
+            constraints.push(Constraint::Length(4));  // Disk
+        }
+        constraints.push(Constraint::Min(3));  // CPU Processes
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area);
+
+        let mut chunk_idx = 0;
+
         render_cpu_gauge(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
         render_memory_gauge(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
-        render_swap_gauge(frame, chunks[chunk_idx], app);
-        chunk_idx += 1;
 
-        if app.show_graphs {
+        if show_swap {
+            render_swap_gauge(frame, chunks[chunk_idx], app);
+            chunk_idx += 1;
+        }
+
+        if show_graphs_actual {
             render_cpu_mem_graph(frame, chunks[chunk_idx], app);
             chunk_idx += 1;
         }
 
-        render_network(frame, chunks[chunk_idx], app);
-        chunk_idx += 1;
-        render_disk(frame, chunks[chunk_idx], app);
-        chunk_idx += 1;
-    }
+        if show_network {
+            render_network(frame, chunks[chunk_idx], app);
+            chunk_idx += 1;
+        }
 
-    render_cpu_processes(frame, chunks[chunk_idx], app);
+        if show_disk {
+            render_disk(frame, chunks[chunk_idx], app);
+            chunk_idx += 1;
+        }
+
+        render_cpu_processes(frame, chunks[chunk_idx], app);
+    }
 }
 
 fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     let Some(ref gpu_metrics) = app.gpu_metrics else { return };
 
+    let height = area.height as i32;
+    let width = area.width as i32;
     let gpu_count = gpu_metrics.gpus.len();
-    let gpu_height = if app.compact_mode { 2 } else { 5 };
-    let total_gpu_height = (gpu_height * gpu_count).min(area.height.saturating_sub(10) as usize);
+
+    // Auto-compact if terminal is very small
+    let auto_compact = height < 15 || width < 50;
+    let use_compact = app.compact_mode || auto_compact;
+
+    // Adaptive GPU card height based on available space
+    let gpu_height = if use_compact {
+        1
+    } else if height < 20 {
+        3  // Minimal GPU card
+    } else {
+        5  // Full GPU card
+    };
+
+    // Show graphs even in compact mode if enabled and space allows
+    let show_graphs_actual = app.show_graphs && height >= 12;
+    let graph_height = if height >= 25 { 6 } else { 4 };  // Shorter graph for smaller windows
+
+    // Calculate how many GPU cards we can show
+    let reserved_height = 5 + if show_graphs_actual { graph_height } else { 0 };
+    let available_for_gpus = (height - reserved_height).max(gpu_height as i32) as usize;
+    let max_gpus_to_show = (available_for_gpus / gpu_height).max(1);
+    let gpus_to_show = gpu_count.min(max_gpus_to_show);
+    let total_gpu_height = gpu_height * gpus_to_show;
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(if app.show_graphs && !app.compact_mode {
+        .constraints(if show_graphs_actual {
             vec![
-                Constraint::Length(total_gpu_height as u16),  // GPU cards
-                Constraint::Length(8),                         // GPU graphs
-                Constraint::Min(8),                            // GPU Processes
+                Constraint::Length(total_gpu_height as u16),
+                Constraint::Length(graph_height as u16),
+                Constraint::Min(3),
             ]
         } else {
             vec![
-                Constraint::Length(total_gpu_height as u16),  // GPU cards
-                Constraint::Min(8),                            // GPU Processes
+                Constraint::Length(total_gpu_height as u16),
+                Constraint::Min(3),
             ]
         })
         .split(area);
 
-    render_gpu_cards(frame, chunks[0], app);
+    render_gpu_cards_limited(frame, chunks[0], app, gpus_to_show, use_compact);
 
     let mut chunk_idx = 1;
-    if app.show_graphs && !app.compact_mode {
+    if show_graphs_actual {
         render_gpu_graphs(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
     }
@@ -1269,15 +1336,15 @@ fn render_cpu_processes(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 }
 
-fn render_gpu_cards(frame: &mut Frame, area: Rect, app: &App) {
+fn render_gpu_cards_limited(frame: &mut Frame, area: Rect, app: &App, max_gpus: usize, compact: bool) {
     let Some(ref gpu_metrics) = app.gpu_metrics else { return };
 
-    let gpu_count = gpu_metrics.gpus.len();
+    let gpu_count = gpu_metrics.gpus.len().min(max_gpus);
     if gpu_count == 0 { return; }
 
-    let height_per_gpu = if app.compact_mode { 2 } else { 5 };
+    let height_per_gpu = area.height as usize / gpu_count;
     let constraints: Vec<Constraint> = (0..gpu_count)
-        .map(|_| Constraint::Length(height_per_gpu))
+        .map(|_| Constraint::Length(height_per_gpu as u16))
         .collect();
 
     let chunks = Layout::default()
@@ -1285,9 +1352,9 @@ fn render_gpu_cards(frame: &mut Frame, area: Rect, app: &App) {
         .constraints(constraints)
         .split(area);
 
-    for (i, gpu) in gpu_metrics.gpus.iter().enumerate() {
+    for (i, gpu) in gpu_metrics.gpus.iter().take(gpu_count).enumerate() {
         if i >= chunks.len() { break; }
-        render_gpu_card(frame, chunks[i], gpu, app.compact_mode);
+        render_gpu_card(frame, chunks[i], gpu, compact);
     }
 }
 
@@ -1299,15 +1366,18 @@ fn render_gpu_card(frame: &mut Frame, area: Rect, gpu: &GpuInfo, compact: bool) 
         0.0
     };
 
-    if compact {
-        let gpu_bar = create_bar(gpu_pct, 15);
-        let mem_bar = create_bar(mem_pct, 15);
+    let card_height = area.height;
+
+    if compact || card_height <= 1 {
+        // Single line compact mode
+        let gpu_bar = create_bar(gpu_pct, 10);
+        let mem_bar = create_bar(mem_pct, 10);
 
         let text = Line::from(vec![
             Span::styled(format!("GPU{} ", gpu.index), Style::default().fg(Color::Cyan)),
             Span::styled(gpu_bar, Style::default().fg(usage_color(gpu_pct))),
             Span::raw(format!(" {:3}%", gpu.gpu_utilization)),
-            Span::raw("  "),
+            Span::raw(" "),
             Span::styled("MEM ", Style::default().fg(Color::Magenta)),
             Span::styled(mem_bar, Style::default().fg(usage_color(mem_pct))),
             Span::raw(format!(" {:3}%", mem_pct as u32)),
@@ -1315,7 +1385,26 @@ fn render_gpu_card(frame: &mut Frame, area: Rect, gpu: &GpuInfo, compact: bool) 
         ]);
 
         frame.render_widget(Paragraph::new(text), area);
+    } else if card_height <= 3 {
+        // Minimal mode with border (3 lines = border + 1 content line + border)
+        let title = format!("GPU {} - {} [{}]", gpu.index, gpu.name, gpu.pstate);
+        let gpu_bar = create_bar(gpu_pct, 12);
+        let mem_bar = create_bar(mem_pct, 12);
+
+        let line = Line::from(vec![
+            Span::styled(gpu_bar, Style::default().fg(usage_color(gpu_pct))),
+            Span::raw(format!(" {:3}% ", gpu.gpu_utilization)),
+            Span::styled(mem_bar, Style::default().fg(usage_color(mem_pct))),
+            Span::raw(format!(" {:3}% ", mem_pct as u32)),
+            Span::styled(format!("{}°C ", gpu.temperature), Style::default().fg(temp_color(gpu.temperature))),
+            Span::raw(format!("{}W", gpu.power_usage)),
+        ]);
+
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let paragraph = Paragraph::new(line).block(block);
+        frame.render_widget(paragraph, area);
     } else {
+        // Full mode (5 lines)
         let title = format!("GPU {} - {} [{}]", gpu.index, gpu.name, gpu.pstate);
 
         let gpu_bar = create_bar(gpu_pct, 20);
