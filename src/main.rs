@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -24,7 +24,7 @@ use std::{
     io,
     time::{Duration, Instant},
 };
-use sysinfo::{Components, Disks, Networks, Pid, ProcessStatus, System, Users};
+use sysinfo::{Components, Disks, Networks, Pid, ProcessStatus, Signal, System, Users};
 
 // ============================================================================
 // Data Structures
@@ -212,6 +212,14 @@ enum ActivePanel {
     GpuProcesses,
 }
 
+// Confirmation dialog for killing processes
+#[derive(Clone)]
+struct KillConfirmation {
+    pid: u32,
+    name: String,
+    signal: Signal,
+}
+
 struct App {
     system: System,
     networks: Networks,
@@ -243,6 +251,14 @@ struct App {
     refresh_rate: Duration,
     #[allow(dead_code)]
     start_time: DateTime<Local>,
+
+    // Kill confirmation dialog
+    kill_confirm: Option<KillConfirmation>,
+    // Status message (shown briefly after actions)
+    status_message: Option<(String, Instant)>,
+    // Track panel areas for mouse support
+    cpu_process_area: Option<Rect>,
+    gpu_process_area: Option<Rect>,
 }
 
 impl App {
@@ -302,6 +318,10 @@ impl App {
             show_graphs: true,
             refresh_rate: Duration::from_millis(1000),
             start_time: Local::now(),
+            kill_confirm: None,
+            status_message: None,
+            cpu_process_area: None,
+            gpu_process_area: None,
         };
 
         app.cpu_process_state.select(Some(0));
@@ -687,14 +707,52 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        // Handle kill confirmation dialog
+        if let Some(ref confirm) = self.kill_confirm.clone() {
+            match code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.execute_kill(confirm.pid, confirm.signal);
+                    self.kill_confirm = None;
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.kill_confirm = None;
+                    self.set_status("Kill cancelled".to_string());
+                }
+                _ => {}
+            }
+            return;
+        }
+
         if self.show_help {
             self.show_help = false;
             return;
         }
 
+        // Check for ctrl-modified keys first (before single-char matches)
+        if modifiers.contains(KeyModifiers::CONTROL) {
+            match code {
+                KeyCode::Char('c') => {
+                    self.running = false;
+                    return;
+                }
+                KeyCode::Char('k') => {
+                    self.request_kill(Signal::Kill);  // SIGKILL (force kill)
+                    return;
+                }
+                KeyCode::Char('t') => {
+                    self.request_kill(Signal::Term);  // SIGTERM (graceful)
+                    return;
+                }
+                KeyCode::Char('i') => {
+                    self.request_kill(Signal::Interrupt);  // SIGINT (interrupt)
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
-            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => self.running = false,
             KeyCode::Char('?') | KeyCode::F(1) => self.show_help = true,
             KeyCode::Tab => {
                 self.active_panel = match self.active_panel {
@@ -730,6 +788,104 @@ impl App {
             KeyCode::Char('-') => {
                 let new_rate = self.refresh_rate.as_millis().saturating_add(100).min(5000);
                 self.refresh_rate = Duration::from_millis(new_rate as u64);
+            }
+            KeyCode::Delete => {
+                self.request_kill(Signal::Term);  // SIGTERM on Delete key
+            }
+            _ => {}
+        }
+    }
+
+    fn request_kill(&mut self, signal: Signal) {
+        let (pid, name) = match self.active_panel {
+            ActivePanel::CpuProcesses => {
+                let procs = self.get_sorted_cpu_processes();
+                let idx = self.cpu_process_state.selected().unwrap_or(0);
+                if let Some(proc) = procs.get(idx) {
+                    (proc.pid, proc.name.clone())
+                } else {
+                    return;
+                }
+            }
+            ActivePanel::GpuProcesses => {
+                let procs = self.get_sorted_gpu_processes();
+                let idx = self.gpu_process_state.selected().unwrap_or(0);
+                if let Some(proc) = procs.get(idx) {
+                    (proc.pid, proc.name.clone())
+                } else {
+                    return;
+                }
+            }
+        };
+
+        self.kill_confirm = Some(KillConfirmation {
+            pid,
+            name,
+            signal,
+        });
+    }
+
+    fn execute_kill(&mut self, pid: u32, signal: Signal) {
+        let sys_pid = Pid::from_u32(pid);
+        if let Some(process) = self.system.process(sys_pid) {
+            let signal_name = match signal {
+                Signal::Kill => "SIGKILL",
+                Signal::Term => "SIGTERM",
+                Signal::Interrupt => "SIGINT",
+                _ => "signal",
+            };
+            if process.kill_with(signal).unwrap_or(false) {
+                self.set_status(format!("Sent {} to PID {}", signal_name, pid));
+            } else {
+                self.set_status(format!("Failed to send {} to PID {}", signal_name, pid));
+            }
+        } else {
+            self.set_status(format!("Process {} not found", pid));
+        }
+    }
+
+    fn set_status(&mut self, msg: String) {
+        self.status_message = Some((msg, Instant::now()));
+    }
+
+    fn handle_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) {
+        match kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Check if click is in CPU process area
+                if let Some(area) = self.cpu_process_area {
+                    if column >= area.x && column < area.x + area.width
+                        && row >= area.y && row < area.y + area.height
+                    {
+                        self.active_panel = ActivePanel::CpuProcesses;
+                        // Calculate which row was clicked (accounting for header and border)
+                        let relative_row = row.saturating_sub(area.y + 2);  // +2 for border and header
+                        let procs = self.get_sorted_cpu_processes();
+                        if (relative_row as usize) < procs.len() {
+                            self.cpu_process_state.select(Some(relative_row as usize));
+                        }
+                        return;
+                    }
+                }
+                // Check if click is in GPU process area
+                if let Some(area) = self.gpu_process_area {
+                    if column >= area.x && column < area.x + area.width
+                        && row >= area.y && row < area.y + area.height
+                    {
+                        self.active_panel = ActivePanel::GpuProcesses;
+                        let relative_row = row.saturating_sub(area.y + 2);
+                        let procs = self.get_sorted_gpu_processes();
+                        if (relative_row as usize) < procs.len() {
+                            self.gpu_process_state.select(Some(relative_row as usize));
+                        }
+                        return;
+                    }
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                self.move_selection(3);
+            }
+            MouseEventKind::ScrollUp => {
+                self.move_selection(-3);
             }
             _ => {}
         }
@@ -800,41 +956,121 @@ impl App {
 // ============================================================================
 
 fn ui(frame: &mut Frame, app: &mut App) {
+    // Handle kill confirmation dialog first (modal)
+    if app.kill_confirm.is_some() {
+        render_kill_confirm(frame, frame.area(), app);
+        return;
+    }
+
     if app.show_help {
         render_help(frame, frame.area());
         return;
     }
 
-    let has_gpu = app.gpu_metrics.is_some();
-
-    // Main layout
+    // Main layout - add extra row for status message if present
+    let has_status = app.status_message.is_some();
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),  // Header
-            Constraint::Min(0),     // Content
-            Constraint::Length(1),  // Footer
-        ])
+        .constraints(if has_status {
+            vec![
+                Constraint::Length(1),  // Header
+                Constraint::Min(0),     // Content
+                Constraint::Length(1),  // Status
+                Constraint::Length(1),  // Footer
+            ]
+        } else {
+            vec![
+                Constraint::Length(1),  // Header
+                Constraint::Min(0),     // Content
+                Constraint::Length(1),  // Footer
+            ]
+        })
         .split(frame.area());
 
     render_header(frame, main_chunks[0], app);
-    render_footer(frame, main_chunks[2], app);
 
-    // Content area layout depends on whether we have GPU and graphs enabled
+    if has_status {
+        render_status(frame, main_chunks[2], app);
+        render_footer(frame, main_chunks[3], app);
+    } else {
+        render_footer(frame, main_chunks[2], app);
+    }
+
+    // Content area layout - always split to show both system and GPU panels
+    // The GPU panel will show "No GPU" message if no GPU is detected
     let content_area = main_chunks[1];
 
-    if has_gpu {
-        // Split horizontally: left for system, right for GPU
-        let h_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(content_area);
+    // Split horizontally: left for system, right for GPU
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(content_area);
 
-        render_system_panel(frame, h_chunks[0], app);
-        render_gpu_panel(frame, h_chunks[1], app);
-    } else {
-        render_system_panel(frame, content_area, app);
+    render_system_panel(frame, h_chunks[0], app);
+    render_gpu_panel(frame, h_chunks[1], app);
+}
+
+fn render_status(frame: &mut Frame, area: Rect, app: &App) {
+    if let Some((msg, _)) = &app.status_message {
+        let status = Line::from(vec![
+            Span::styled(" STATUS: ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", msg), Style::default().fg(Color::Yellow)),
+        ]);
+        frame.render_widget(Paragraph::new(status), area);
     }
+}
+
+fn render_kill_confirm(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(ref confirm) = app.kill_confirm else { return };
+
+    let signal_name = match confirm.signal {
+        Signal::Kill => "SIGKILL (force)",
+        Signal::Term => "SIGTERM (graceful)",
+        Signal::Interrupt => "SIGINT (interrupt)",
+        _ => "signal",
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Kill process?", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  PID: "),
+            Span::styled(format!("{}", confirm.pid), Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(vec![
+            Span::raw("  Name: "),
+            Span::styled(&confirm.name, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::raw("  Signal: "),
+            Span::styled(signal_name, Style::default().fg(Color::Magenta)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [Y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw(" Yes, kill it   "),
+            Span::styled("[N]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(" No, cancel"),
+        ]),
+        Line::from(""),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Confirm Kill")
+        .border_style(Style::default().fg(Color::Red));
+
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .wrap(Wrap { trim: false });
+
+    let confirm_area = centered_rect(40, 40, area);
+
+    frame.render_widget(ratatui::widgets::Clear, confirm_area);
+    frame.render_widget(paragraph, confirm_area);
 }
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
@@ -873,12 +1109,12 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let footer = Line::from(vec![
         Span::styled(" ?", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(":Help "),
+        Span::styled("Del", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(":Kill "),
         Span::styled("Tab", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(":Switch "),
         Span::styled("1-6", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(":Sort "),
-        Span::styled("r", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(":Reverse "),
         Span::styled("a", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(":All "),
         Span::styled("g", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -886,7 +1122,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("c", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(":Compact "),
         Span::styled("+/-", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(format!(":Rate({}ms) ", refresh_ms)),
+        Span::raw(format!(":{}ms ", refresh_ms)),
         Span::styled("q", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         Span::raw(":Quit"),
     ]);
@@ -997,8 +1233,50 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 }
 
+fn render_no_gpu_panel(frame: &mut Frame, area: Rect) {
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("No NVIDIA GPU Detected", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Possible reasons:", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from("  • No NVIDIA GPU installed"),
+        Line::from("  • NVIDIA drivers not installed"),
+        Line::from("  • NVML library not available"),
+        Line::from("  • GPU in use by another process exclusively"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("To install NVIDIA drivers:", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from("  Ubuntu/Debian: sudo apt install nvidia-driver-XXX"),
+        Line::from("  Fedora: sudo dnf install akmod-nvidia"),
+        Line::from("  Arch: sudo pacman -S nvidia"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("System monitoring is fully functional.", Style::default().fg(Color::Green)),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("GPU Panel")
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .wrap(Wrap { trim: false });
+
+    frame.render_widget(paragraph, area);
+}
+
 fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &mut App) {
-    let Some(ref gpu_metrics) = app.gpu_metrics else { return };
+    let Some(ref gpu_metrics) = app.gpu_metrics else {
+        render_no_gpu_panel(frame, area);
+        return;
+    };
 
     let height = area.height as i32;
     let width = area.width as i32;
@@ -1257,6 +1535,9 @@ fn render_disk(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_cpu_processes(frame: &mut Frame, area: Rect, app: &mut App) {
+    // Save area for mouse tracking
+    app.cpu_process_area = Some(area);
+
     let procs = app.get_sorted_cpu_processes();
     let is_active = app.active_panel == ActivePanel::CpuProcesses;
 
@@ -1495,6 +1776,9 @@ fn render_gpu_graphs(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_gpu_processes(frame: &mut Frame, area: Rect, app: &mut App) {
+    // Save area for mouse tracking
+    app.gpu_process_area = Some(area);
+
     let procs = app.get_sorted_gpu_processes();
     let is_active = app.active_panel == ActivePanel::GpuProcesses;
 
@@ -1582,6 +1866,12 @@ fn render_help(frame: &mut Frame, area: Rect) {
         Line::from("  k/↑          Move selection up"),
         Line::from("  PgDn/PgUp    Move selection by page"),
         Line::from("  Home/End     Jump to first/last item"),
+        Line::from("  Mouse        Click to select, scroll to navigate"),
+        Line::from(""),
+        Line::from(vec![Span::styled("Process Control:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red))]),
+        Line::from("  Del/Ctrl-T   Send SIGTERM (graceful termination)"),
+        Line::from("  Ctrl-K       Send SIGKILL (force kill)"),
+        Line::from("  Ctrl-I       Send SIGINT (interrupt)"),
         Line::from(""),
         Line::from(vec![Span::styled("Sorting:", Style::default().add_modifier(Modifier::BOLD))]),
         Line::from("  1            Sort by PID"),
@@ -1740,14 +2030,27 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             .unwrap_or(Duration::from_millis(0));
 
         if event::poll(timeout).context("Failed to poll events")? {
-            if let Event::Key(key) = event::read().context("Failed to read event")? {
-                app.handle_key(key.code, key.modifiers);
+            match event::read().context("Failed to read event")? {
+                Event::Key(key) => {
+                    app.handle_key(key.code, key.modifiers);
+                }
+                Event::Mouse(mouse) => {
+                    app.handle_mouse(mouse.kind, mouse.column, mouse.row);
+                }
+                _ => {}
             }
         }
 
         if last_tick.elapsed() >= app.refresh_rate {
             app.refresh_all()?;
             last_tick = Instant::now();
+        }
+
+        // Clear old status messages after 3 seconds
+        if let Some((_, time)) = &app.status_message {
+            if time.elapsed() > Duration::from_secs(3) {
+                app.status_message = None;
+            }
         }
     }
 
