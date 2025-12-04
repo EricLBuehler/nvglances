@@ -901,9 +901,9 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
             vec![
                 Constraint::Length(3),  // CPU gauge
                 Constraint::Length(3),  // Memory gauge
-                Constraint::Length(6),  // CPU/Memory graphs
-                Constraint::Length(4),  // Network
-                Constraint::Length(4),  // Disk
+                Constraint::Length(8),  // CPU/Memory graphs (needs more height for braille)
+                Constraint::Length(5),  // Network
+                Constraint::Length(5),  // Disk
                 Constraint::Min(8),     // CPU Processes
             ]
         } else if app.compact_mode {
@@ -916,8 +916,8 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
             vec![
                 Constraint::Length(3),  // CPU gauge
                 Constraint::Length(3),  // Memory gauge
-                Constraint::Length(4),  // Network
-                Constraint::Length(4),  // Disk
+                Constraint::Length(5),  // Network
+                Constraint::Length(5),  // Disk
                 Constraint::Min(8),     // CPU Processes
             ]
         })
@@ -962,7 +962,7 @@ fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints(if app.show_graphs && !app.compact_mode {
             vec![
                 Constraint::Length(total_gpu_height as u16),  // GPU cards
-                Constraint::Length(6),                         // GPU graphs
+                Constraint::Length(8),                         // GPU graphs
                 Constraint::Min(8),                            // GPU Processes
             ]
         } else {
@@ -999,9 +999,9 @@ fn render_cpu_gauge(frame: &mut Frame, area: Rect, app: &App) {
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title("CPU"))
-        .gauge_style(Style::default().fg(color))
-        .percent(cpu_pct as u16)
-        .label(label);
+        .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
+        .ratio(cpu_pct as f64 / 100.0)
+        .label(Span::styled(label, Style::default().fg(Color::White)));
 
     frame.render_widget(gauge, area);
 }
@@ -1024,9 +1024,9 @@ fn render_memory_gauge(frame: &mut Frame, area: Rect, app: &App) {
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title("Memory"))
-        .gauge_style(Style::default().fg(color))
-        .percent(mem_pct as u16)
-        .label(label);
+        .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
+        .ratio(mem_pct / 100.0)
+        .label(Span::styled(label, Style::default().fg(Color::White)));
 
     frame.render_widget(gauge, area);
 }
@@ -1086,23 +1086,26 @@ fn render_cpu_mem_graph(frame: &mut Frame, area: Rect, app: &App) {
         Dataset::default()
             .name("CPU")
             .marker(symbols::Marker::Braille)
+            .graph_type(ratatui::widgets::GraphType::Line)
             .style(Style::default().fg(Color::Cyan))
             .data(&cpu_data),
         Dataset::default()
             .name("MEM")
             .marker(symbols::Marker::Braille)
+            .graph_type(ratatui::widgets::GraphType::Line)
             .style(Style::default().fg(Color::Magenta))
             .data(&mem_data),
     ];
 
     let chart = Chart::new(datasets)
-        .block(Block::default().borders(Borders::ALL).title("History"))
+        .block(Block::default().borders(Borders::ALL).title("History (CPU=cyan, MEM=magenta)"))
         .x_axis(Axis::default()
-            .bounds([0.0, 60.0])
+            .bounds([0.0, 59.0])
             .labels::<Vec<Line>>(vec![]))
         .y_axis(Axis::default()
+            .style(Style::default().fg(Color::Gray))
             .bounds([0.0, 100.0])
-            .labels(vec![Line::from("0%"), Line::from("50%"), Line::from("100%")]));
+            .labels(vec![Line::from("0"), Line::from("50"), Line::from("100")]));
 
     frame.render_widget(chart, area);
 }
@@ -1349,6 +1352,7 @@ fn render_gpu_graphs(frame: &mut Frame, area: Rect, app: &App) {
             Dataset::default()
                 .name(format!("GPU{}", i))
                 .marker(symbols::Marker::Braille)
+                .graph_type(ratatui::widgets::GraphType::Line)
                 .style(Style::default().fg(colors[i % colors.len()]))
                 .data(data)
         );
@@ -1356,8 +1360,11 @@ fn render_gpu_graphs(frame: &mut Frame, area: Rect, app: &App) {
 
     let chart = Chart::new(datasets)
         .block(Block::default().borders(Borders::ALL).title("GPU History"))
-        .x_axis(Axis::default().bounds([0.0, 60.0]).labels::<Vec<Line>>(vec![]))
-        .y_axis(Axis::default().bounds([0.0, 100.0]).labels(vec![Line::from("0%"), Line::from("50%"), Line::from("100%")]));
+        .x_axis(Axis::default().bounds([0.0, 59.0]).labels::<Vec<Line>>(vec![]))
+        .y_axis(Axis::default()
+            .style(Style::default().fg(Color::Gray))
+            .bounds([0.0, 100.0])
+            .labels(vec![Line::from("0"), Line::from("50"), Line::from("100")]));
 
     frame.render_widget(chart, area);
 }
