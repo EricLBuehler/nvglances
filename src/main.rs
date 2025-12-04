@@ -901,6 +901,7 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
             vec![
                 Constraint::Length(3),  // CPU gauge
                 Constraint::Length(3),  // Memory gauge
+                Constraint::Length(3),  // Swap gauge
                 Constraint::Length(8),  // CPU/Memory graphs (needs more height for braille)
                 Constraint::Length(5),  // Network
                 Constraint::Length(5),  // Disk
@@ -916,6 +917,7 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
             vec![
                 Constraint::Length(3),  // CPU gauge
                 Constraint::Length(3),  // Memory gauge
+                Constraint::Length(3),  // Swap gauge
                 Constraint::Length(5),  // Network
                 Constraint::Length(5),  // Disk
                 Constraint::Min(8),     // CPU Processes
@@ -934,6 +936,8 @@ fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         render_cpu_gauge(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
         render_memory_gauge(frame, chunks[chunk_idx], app);
+        chunk_idx += 1;
+        render_swap_gauge(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
 
         if app.show_graphs {
@@ -1009,23 +1013,40 @@ fn render_cpu_gauge(frame: &mut Frame, area: Rect, app: &App) {
 fn render_memory_gauge(frame: &mut Frame, area: Rect, app: &App) {
     let mem = &app.system_metrics.memory;
     let mem_pct = if mem.total > 0 { (mem.used as f64 / mem.total as f64) * 100.0 } else { 0.0 };
-    let swap_pct = if mem.swap_total > 0 { (mem.swap_used as f64 / mem.swap_total as f64) * 100.0 } else { 0.0 };
     let color = usage_color(mem_pct);
 
     let label = format!(
-        "MEM: {} / {} ({:.1}%) | SWAP: {} / {} ({:.1}%)",
+        "MEM: {} / {} ({:.1}%)",
         format_size(mem.used, BINARY),
         format_size(mem.total, BINARY),
         mem_pct,
-        format_size(mem.swap_used, BINARY),
-        format_size(mem.swap_total, BINARY),
-        swap_pct,
     );
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title("Memory"))
         .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
         .ratio(mem_pct / 100.0)
+        .label(Span::styled(label, Style::default().fg(Color::White)));
+
+    frame.render_widget(gauge, area);
+}
+
+fn render_swap_gauge(frame: &mut Frame, area: Rect, app: &App) {
+    let mem = &app.system_metrics.memory;
+    let swap_pct = if mem.swap_total > 0 { (mem.swap_used as f64 / mem.swap_total as f64) * 100.0 } else { 0.0 };
+    let color = usage_color(swap_pct);
+
+    let label = format!(
+        "SWAP: {} / {} ({:.1}%)",
+        format_size(mem.swap_used, BINARY),
+        format_size(mem.swap_total, BINARY),
+        swap_pct,
+    );
+
+    let gauge = Gauge::default()
+        .block(Block::default().borders(Borders::ALL).title("Swap"))
+        .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
+        .ratio(swap_pct / 100.0)
         .label(Span::styled(label, Style::default().fg(Color::White)));
 
     frame.render_widget(gauge, area);
@@ -1098,7 +1119,7 @@ fn render_cpu_mem_graph(frame: &mut Frame, area: Rect, app: &App) {
     ];
 
     let chart = Chart::new(datasets)
-        .block(Block::default().borders(Borders::ALL).title("History (CPU=cyan, MEM=magenta)"))
+        .block(Block::default().borders(Borders::ALL).title("CPU History (CPU=cyan, MEM=magenta)"))
         .x_axis(Axis::default()
             .bounds([0.0, 59.0])
             .labels::<Vec<Line>>(vec![]))
@@ -1358,8 +1379,23 @@ fn render_gpu_graphs(frame: &mut Frame, area: Rect, app: &App) {
         );
     }
 
+    // Build GPU legend string
+    let gpu_legend: Vec<String> = (0..util_data.len().min(4))
+        .map(|i| {
+            let color_name = match i {
+                0 => "cyan",
+                1 => "magenta",
+                2 => "green",
+                3 => "yellow",
+                _ => "?",
+            };
+            format!("GPU{}={}", i, color_name)
+        })
+        .collect();
+    let legend = gpu_legend.join(", ");
+
     let chart = Chart::new(datasets)
-        .block(Block::default().borders(Borders::ALL).title("GPU History"))
+        .block(Block::default().borders(Borders::ALL).title(format!("GPU History ({})", legend)))
         .x_axis(Axis::default().bounds([0.0, 59.0]).labels::<Vec<Line>>(vec![]))
         .y_axis(Axis::default()
             .style(Style::default().fg(Color::Gray))
