@@ -116,6 +116,8 @@ struct GpuProcessInfo {
 #[derive(Clone)]
 struct SystemMetrics {
     hostname: String,
+    os_name: String,
+    kernel_version: String,
     uptime: u64,
     load_avg: (f64, f64, f64),
     cpus: Vec<CpuInfo>,
@@ -282,6 +284,8 @@ impl App {
             nvml,
             system_metrics: SystemMetrics {
                 hostname: String::new(),
+                os_name: String::new(),
+                kernel_version: String::new(),
                 uptime: 0,
                 load_avg: (0.0, 0.0, 0.0),
                 cpus: Vec::new(),
@@ -350,6 +354,10 @@ impl App {
     fn refresh_system_metrics(&mut self, elapsed: Duration) {
         // Hostname
         self.system_metrics.hostname = System::host_name().unwrap_or_else(|| "unknown".into());
+
+        // OS info
+        self.system_metrics.os_name = System::long_os_version().unwrap_or_else(|| "Unknown OS".into());
+        self.system_metrics.kernel_version = System::kernel_version().unwrap_or_else(|| "?".into());
 
         // Uptime
         self.system_metrics.uptime = System::uptime();
@@ -1109,6 +1117,8 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("nvglances", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(" | "),
         Span::styled(&app.system_metrics.hostname, Style::default().fg(Color::Green)),
+        Span::raw(" | "),
+        Span::styled(&app.system_metrics.os_name, Style::default().fg(Color::Blue)),
         Span::raw(" | "),
         Span::styled(format!("up {}", uptime), Style::default().fg(Color::Yellow)),
         Span::raw(" | "),
