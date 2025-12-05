@@ -2,7 +2,7 @@
 name = "nvglances"
 version = "0.1.0"
 edition = "2021"
-description = "A feature-complete combination of glances and nvitop - system and GPU monitoring TUI"
+description = "glances + nvitop = nvglances"
 license = "MIT"
 
 [dependencies]
