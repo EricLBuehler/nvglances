@@ -1,6 +1,6 @@
 [package]
 name = "nvglances"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "A TUI system monitor with support for NVIDIA GPUs (CUDA/NVML) and Apple Silicon GPUs (Metal)"
 license = "MIT"
