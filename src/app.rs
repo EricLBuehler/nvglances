@@ -10,8 +10,8 @@ use sysinfo::{Components, Disks, Networks, Pid, Signal, System, Users};
 
 use crate::metrics::{collect_gpu_metrics, collect_system_metrics, GpuHandle};
 use crate::types::{
-    ActivePanel, GpuMetrics, GpuProcessInfo, HistoryData, KillConfirmation, ProcessInfo,
-    SortColumn, SystemMetrics,
+    ActivePanel, GpuBackend, GpuMetrics, GpuProcessInfo, HistoryData, KillConfirmation,
+    ProcessInfo, SortColumn, SystemMetrics,
 };
 
 /// Main application state.
@@ -298,10 +298,20 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('?') | KeyCode::F(1) => self.show_help = true,
             KeyCode::Tab => {
-                self.active_panel = match self.active_panel {
-                    ActivePanel::CpuProcesses => ActivePanel::GpuProcesses,
-                    ActivePanel::GpuProcesses => ActivePanel::CpuProcesses,
-                };
+                // On Metal, skip GPU processes panel since it's not available
+                let is_metal = self
+                    .gpu_metrics
+                    .as_ref()
+                    .map(|m| m.backend == GpuBackend::Metal)
+                    .unwrap_or(false);
+
+                if !is_metal {
+                    self.active_panel = match self.active_panel {
+                        ActivePanel::CpuProcesses => ActivePanel::GpuProcesses,
+                        ActivePanel::GpuProcesses => ActivePanel::CpuProcesses,
+                    };
+                }
+                // On Metal, Tab does nothing (stays on CPU processes)
             }
             KeyCode::Char('a') => self.show_all_processes = !self.show_all_processes,
             KeyCode::Char('g') => self.show_graphs = !self.show_graphs,
@@ -417,20 +427,27 @@ impl App {
                         return;
                     }
                 }
-                // Check if click is in GPU process area
-                if let Some(area) = self.gpu_process_area {
-                    if column >= area.x
-                        && column < area.x + area.width
-                        && row >= area.y
-                        && row < area.y + area.height
-                    {
-                        self.active_panel = ActivePanel::GpuProcesses;
-                        let relative_row = row.saturating_sub(area.y + 2);
-                        let procs = self.get_sorted_gpu_processes();
-                        if (relative_row as usize) < procs.len() {
-                            self.gpu_process_state.select(Some(relative_row as usize));
+                // Check if click is in GPU process area (skip on Metal)
+                let is_metal = self
+                    .gpu_metrics
+                    .as_ref()
+                    .map(|m| m.backend == GpuBackend::Metal)
+                    .unwrap_or(false);
+
+                if !is_metal {
+                    if let Some(area) = self.gpu_process_area {
+                        if column >= area.x
+                            && column < area.x + area.width
+                            && row >= area.y
+                            && row < area.y + area.height
+                        {
+                            self.active_panel = ActivePanel::GpuProcesses;
+                            let relative_row = row.saturating_sub(area.y + 2);
+                            let procs = self.get_sorted_gpu_processes();
+                            if (relative_row as usize) < procs.len() {
+                                self.gpu_process_state.select(Some(relative_row as usize));
+                            }
                         }
-                        return;
                     }
                 }
             }

@@ -5,12 +5,12 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::dialogs::{render_help, render_kill_confirm, render_status};
 use super::footer::render_footer;
 use super::gpu::render_gpu_panel;
 use super::header::render_header;
 use super::system::render_system_panel;
+use crate::app::App;
 
 /// Main UI rendering function.
 pub fn render_ui(frame: &mut Frame, app: &mut App) {

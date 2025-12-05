@@ -9,8 +9,8 @@ use ratatui::{
 };
 use sysinfo::Signal;
 
-use crate::app::App;
 use super::layout::centered_rect;
+use crate::app::App;
 
 /// Render the status message bar.
 pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
@@ -46,9 +46,7 @@ pub fn render_kill_confirm(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(""),
         Line::from(vec![Span::styled(
             "Kill process?",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
         Line::from(vec![
@@ -77,9 +75,7 @@ pub fn render_kill_confirm(frame: &mut Frame, area: Rect, app: &App) {
             Span::raw(" Yes, kill it   "),
             Span::styled(
                 "[N]",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" No, cancel"),
         ]),
@@ -125,9 +121,7 @@ pub fn render_help(frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(vec![Span::styled(
             "Process Control:",
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Red),
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
         )]),
         Line::from("  Del/Ctrl-T   Send SIGTERM (graceful termination)"),
         Line::from("  Ctrl-K       Send SIGKILL (force kill)"),

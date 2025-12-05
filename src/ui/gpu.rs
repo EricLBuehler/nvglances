@@ -9,11 +9,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
-use crate::types::GpuInfo;
-use crate::utils::{create_bar, temp_color, usage_color};
-use super::processes::render_gpu_processes;
 use super::graphs::render_gpu_graphs;
+use super::processes::render_gpu_processes;
+use crate::app::App;
+use crate::types::{GpuBackend, GpuInfo};
+use crate::utils::{create_bar, temp_color, usage_color};
 
 /// Render the GPU panel (or no-GPU message if no GPU available).
 pub fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -137,6 +137,7 @@ fn render_gpu_cards_limited(
         return;
     }
 
+    let backend = gpu_metrics.backend;
     let height_per_gpu = area.height as usize / gpu_count;
     let constraints: Vec<Constraint> = (0..gpu_count)
         .map(|_| Constraint::Length(height_per_gpu as u16))
@@ -151,13 +152,18 @@ fn render_gpu_cards_limited(
         if i >= chunks.len() {
             break;
         }
-        render_gpu_card(frame, chunks[i], gpu, compact);
+        render_gpu_card(frame, chunks[i], gpu, compact, backend);
     }
 }
 
 /// Render a single GPU card.
-pub fn render_gpu_card(frame: &mut Frame, area: Rect, gpu: &GpuInfo, compact: bool) {
-    let gpu_pct = gpu.gpu_utilization as f64;
+pub fn render_gpu_card(
+    frame: &mut Frame,
+    area: Rect,
+    gpu: &GpuInfo,
+    compact: bool,
+    backend: GpuBackend,
+) {
     let mem_pct = if gpu.memory_total > 0 {
         (gpu.memory_used as f64 / gpu.memory_total as f64) * 100.0
     } else {
@@ -165,6 +171,72 @@ pub fn render_gpu_card(frame: &mut Frame, area: Rect, gpu: &GpuInfo, compact: bo
     };
 
     let card_height = area.height;
+    let is_metal = backend == GpuBackend::Metal;
+
+    if is_metal {
+        // Metal-specific rendering (only memory info available)
+        render_gpu_card_metal(frame, area, gpu, compact, mem_pct);
+    } else {
+        // NVML rendering with full metrics
+        render_gpu_card_nvml(frame, area, gpu, compact, mem_pct, card_height);
+    }
+}
+
+/// Render GPU card for Metal backend (limited metrics).
+fn render_gpu_card_metal(
+    frame: &mut Frame,
+    area: Rect,
+    gpu: &GpuInfo,
+    compact: bool,
+    mem_pct: f64,
+) {
+    let card_height = area.height;
+    let mem_bar = create_bar(mem_pct, 20);
+
+    if compact || card_height <= 1 {
+        let mem_bar_small = create_bar(mem_pct, 15);
+        let text = Line::from(vec![
+            Span::styled(
+                format!("GPU{} ", gpu.index),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(&gpu.name, Style::default().fg(Color::Green)),
+            Span::raw("  "),
+            Span::styled("MEM ", Style::default().fg(Color::Magenta)),
+            Span::styled(mem_bar_small, Style::default().fg(usage_color(mem_pct))),
+            Span::raw(format!(" {:3}%", mem_pct as u32)),
+        ]);
+        frame.render_widget(Paragraph::new(text), area);
+    } else {
+        let title = format!("GPU {} - {} [Metal]", gpu.index, gpu.name);
+
+        let lines = vec![Line::from(vec![
+            Span::styled("MEM  ", Style::default().fg(Color::Magenta)),
+            Span::styled(mem_bar, Style::default().fg(usage_color(mem_pct))),
+            Span::raw(format!(" {:3}%  ", mem_pct as u32)),
+            Span::raw(format!(
+                "{} / {}",
+                format_size(gpu.memory_used, BINARY),
+                format_size(gpu.memory_total, BINARY)
+            )),
+        ])];
+
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let paragraph = Paragraph::new(lines).block(block);
+        frame.render_widget(paragraph, area);
+    }
+}
+
+/// Render GPU card for NVML backend (full metrics).
+fn render_gpu_card_nvml(
+    frame: &mut Frame,
+    area: Rect,
+    gpu: &GpuInfo,
+    compact: bool,
+    mem_pct: f64,
+    card_height: u16,
+) {
+    let gpu_pct = gpu.gpu_utilization as f64;
 
     if compact || card_height <= 1 {
         // Single line compact mode
@@ -172,7 +244,10 @@ pub fn render_gpu_card(frame: &mut Frame, area: Rect, gpu: &GpuInfo, compact: bo
         let mem_bar = create_bar(mem_pct, 10);
 
         let text = Line::from(vec![
-            Span::styled(format!("GPU{} ", gpu.index), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("GPU{} ", gpu.index),
+                Style::default().fg(Color::Cyan),
+            ),
             Span::styled(gpu_bar, Style::default().fg(usage_color(gpu_pct))),
             Span::raw(format!(" {:3}%", gpu.gpu_utilization)),
             Span::raw(" "),

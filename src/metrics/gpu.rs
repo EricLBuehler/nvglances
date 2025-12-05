@@ -1,7 +1,7 @@
 //! GPU metrics collection - supports NVML (Linux/Windows) and Metal (macOS).
 
-use sysinfo::{Pid, System, Users};
 use std::collections::HashMap;
+use sysinfo::{Pid, System, Users};
 
 use crate::types::{GpuBackend, GpuInfo, GpuMetrics};
 
@@ -62,16 +62,17 @@ mod nvml_backend {
             let power_usage = device.power_usage().unwrap_or(0) / 1000;
             let power_limit = device.power_management_limit().unwrap_or(0) / 1000;
 
-            let utilization = device
-                .utilization_rates()
-                .unwrap_or(nvml_wrapper::struct_wrappers::device::Utilization { gpu: 0, memory: 0 });
-            let memory_info = device.memory_info().unwrap_or(
-                nvml_wrapper::struct_wrappers::device::MemoryInfo {
-                    free: 0,
-                    total: 1,
-                    used: 0,
-                },
+            let utilization = device.utilization_rates().unwrap_or(
+                nvml_wrapper::struct_wrappers::device::Utilization { gpu: 0, memory: 0 },
             );
+            let memory_info =
+                device
+                    .memory_info()
+                    .unwrap_or(nvml_wrapper::struct_wrappers::device::MemoryInfo {
+                        free: 0,
+                        total: 1,
+                        used: 0,
+                    });
 
             let encoder = device
                 .encoder_utilization()

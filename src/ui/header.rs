@@ -24,7 +24,10 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             GpuBackend::Metal => "API",
             GpuBackend::None => "GPU",
         };
-        format!(" | Driver: {} | {}: {}", gm.driver_version, api_label, gm.api_version)
+        format!(
+            " | Driver: {} | {}: {}",
+            gm.driver_version, api_label, gm.api_version
+        )
     } else {
         String::new()
     };
@@ -37,9 +40,15 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" | "),
-        Span::styled(&app.system_metrics.hostname, Style::default().fg(Color::Green)),
+        Span::styled(
+            &app.system_metrics.hostname,
+            Style::default().fg(Color::Green),
+        ),
         Span::raw(" | "),
-        Span::styled(&app.system_metrics.os_name, Style::default().fg(Color::Blue)),
+        Span::styled(
+            &app.system_metrics.os_name,
+            Style::default().fg(Color::Blue),
+        ),
         Span::raw(" | "),
         Span::styled(format!("up {}", uptime), Style::default().fg(Color::Yellow)),
         Span::raw(" | "),

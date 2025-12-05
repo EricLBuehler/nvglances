@@ -24,9 +24,7 @@ pub fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(":Help "),
         Span::styled(
             "Del",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
         Span::raw(":Kill "),
         Span::styled(
@@ -73,9 +71,7 @@ pub fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(format!(":{}ms ", refresh_ms)),
         Span::styled(
             "q",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
         Span::raw(":Quit"),
     ]);

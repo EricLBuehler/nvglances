@@ -1,6 +1,8 @@
 # nvglances
 
-A feature-complete terminal UI that combines the best of [glances](https://github.com/nicolargo/glances) and [nvitop](https://github.com/XuehaiPan/nvitop) - system and NVIDIA GPU monitoring in one tool.
+A feature-complete terminal UI that combines the best of [glances](https://github.com/nicolargo/glances) and [nvitop](https://github.com/XuehaiPan/nvitop) - system and GPU monitoring in one tool.
+
+**Supports NVIDIA GPUs (via CUDA/NVML) and Apple Silicon GPUs (via Metal).**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)
@@ -14,7 +16,9 @@ A feature-complete terminal UI that combines the best of [glances](https://githu
 - **Network**: Interface traffic rates and totals
 - **Processes**: Sortable process table with CPU/memory usage
 
-### GPU Monitoring (NVIDIA)
+### GPU Monitoring
+
+#### NVIDIA GPUs (Linux/Windows via NVML)
 - **Multi-GPU support**: Monitor all NVIDIA GPUs simultaneously
 - **GPU metrics**: Utilization, temperature, fan speed, power draw
 - **Memory**: VRAM usage per GPU
@@ -23,6 +27,11 @@ A feature-complete terminal UI that combines the best of [glances](https://githu
 - **Encoder/Decoder**: Video engine utilization
 - **PCIe throughput**: Data transfer rates
 - **GPU processes**: Track processes using GPU resources
+
+#### Apple Silicon GPUs (macOS via Metal)
+- **Multi-GPU support**: Monitor all Metal-compatible GPUs
+- **Memory**: GPU memory usage and allocation
+- **Metal API version**: Displays Metal 3, Metal 2, etc.
 
 ### User Interface
 - **Adaptive layout**: Automatically adjusts to terminal size
@@ -56,8 +65,8 @@ cargo install --path .
 ### Requirements
 
 - Rust 1.70 or later
-- NVIDIA drivers (for GPU monitoring)
-- Linux (primary target)
+- **Linux/Windows**: NVIDIA drivers for GPU monitoring
+- **macOS**: Metal-compatible GPU (Apple Silicon or AMD)
 
 ## Usage
 

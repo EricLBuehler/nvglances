@@ -9,10 +9,10 @@ use ratatui::{
     Frame,
 };
 
+use super::graphs::render_cpu_mem_graph;
+use super::processes::render_cpu_processes;
 use crate::app::App;
 use crate::utils::{create_bar, usage_color};
-use super::processes::render_cpu_processes;
-use super::graphs::render_cpu_mem_graph;
 
 /// Render the system panel with CPU, memory, network, disk info.
 pub fn render_system_panel(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -119,7 +119,11 @@ pub fn render_cpu_gauge(frame: &mut Frame, area: Rect, app: &App) {
         "CPU: {:.1}% | {} cores @ {} MHz | Procs: {} | Threads: {}",
         cpu_pct,
         app.system_metrics.cpus.len(),
-        app.system_metrics.cpus.first().map(|c| c.frequency).unwrap_or(0),
+        app.system_metrics
+            .cpus
+            .first()
+            .map(|c| c.frequency)
+            .unwrap_or(0),
         app.system_metrics.process_count,
         app.system_metrics.thread_count,
     );
@@ -258,8 +262,11 @@ pub fn render_network(frame: &mut Frame, area: Rect, app: &App) {
     )
     .block(Block::default().borders(Borders::ALL).title("Network"))
     .header(
-        Row::new(vec!["Interface", "Download", "Upload", "Total"])
-            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Row::new(vec!["Interface", "Download", "Upload", "Total"]).style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     );
 
     frame.render_widget(table, area);
@@ -302,8 +309,11 @@ pub fn render_disk(frame: &mut Frame, area: Rect, app: &App) {
     )
     .block(Block::default().borders(Borders::ALL).title("Disk"))
     .header(
-        Row::new(vec!["Mount", "FS", "Used/Total", "Usage", "%"])
-            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Row::new(vec!["Mount", "FS", "Used/Total", "Usage", "%"]).style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     );
 
     frame.render_widget(table, area);
