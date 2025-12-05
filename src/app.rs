@@ -4,12 +4,11 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
-use nvml_wrapper::Nvml;
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use sysinfo::{Components, Disks, Networks, Pid, Signal, System, Users};
 
-use crate::metrics::{collect_gpu_metrics, collect_system_metrics};
+use crate::metrics::{collect_gpu_metrics, collect_system_metrics, GpuHandle};
 use crate::types::{
     ActivePanel, GpuMetrics, GpuProcessInfo, HistoryData, KillConfirmation, ProcessInfo,
     SortColumn, SystemMetrics,
@@ -23,7 +22,7 @@ pub struct App {
     pub disks: Disks,
     pub components: Components,
     pub users: Users,
-    pub nvml: Option<Nvml>,
+    pub gpu_handle: GpuHandle,
 
     // Collected metrics
     pub system_metrics: SystemMetrics,
@@ -71,7 +70,7 @@ impl App {
         let components = Components::new_with_refreshed_list();
         let users = Users::new_with_refreshed_list();
 
-        let nvml = Nvml::init().ok();
+        let gpu_handle = GpuHandle::new();
 
         let mut app = Self {
             system,
@@ -79,7 +78,7 @@ impl App {
             disks,
             components,
             users,
-            nvml,
+            gpu_handle,
             system_metrics: SystemMetrics::default(),
             gpu_metrics: None,
             history: HistoryData::new(),
@@ -131,7 +130,7 @@ impl App {
             elapsed,
         );
 
-        self.gpu_metrics = collect_gpu_metrics(&self.nvml, &self.system, &self.users);
+        self.gpu_metrics = collect_gpu_metrics(&self.gpu_handle, &self.system, &self.users);
 
         self.update_history();
 

@@ -1,9 +1,10 @@
 [package]
 name = "nvglances"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "glances + nvitop = nvglances"
 license = "MIT"
+repository = "https://github.com/EricLBuehler/nvglances"
 
 [dependencies]
 # TUI framework
@@ -13,8 +14,15 @@ crossterm = "0.28"
 # System metrics
 sysinfo = "0.32"
 
-# NVIDIA GPU support
+# NVIDIA GPU support (Linux/Windows)
+[target.'cfg(not(target_os = "macos"))'.dependencies]
 nvml-wrapper = "0.10"
+
+# Metal GPU support (macOS)
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.31"
+core-foundation = "0.10"
+objc2 = "0.6"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

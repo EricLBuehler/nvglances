@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::types::GpuBackend;
 use crate::utils::format_duration;
 
 /// Render the header bar with system and GPU info.
@@ -18,7 +19,12 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let now = Local::now();
 
     let gpu_info = if let Some(ref gm) = app.gpu_metrics {
-        format!(" | Driver: {} | CUDA: {}", gm.driver_version, gm.cuda_version)
+        let api_label = match gm.backend {
+            GpuBackend::Nvml => "CUDA",
+            GpuBackend::Metal => "API",
+            GpuBackend::None => "GPU",
+        };
+        format!(" | Driver: {} | {}: {}", gm.driver_version, api_label, gm.api_version)
     } else {
         String::new()
     };

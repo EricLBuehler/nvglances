@@ -110,13 +110,24 @@ pub struct SystemMetrics {
     pub temperatures: Vec<(String, f32)>,
 }
 
+/// GPU backend type.
+#[derive(Clone, Copy, Default, PartialEq)]
+#[allow(dead_code)]
+pub enum GpuBackend {
+    #[default]
+    None,
+    Nvml,
+    Metal,
+}
+
 /// Aggregated GPU metrics.
 #[derive(Clone, Default)]
 pub struct GpuMetrics {
     pub gpus: Vec<GpuInfo>,
     pub processes: Vec<GpuProcessInfo>,
     pub driver_version: String,
-    pub cuda_version: String,
+    pub api_version: String,
+    pub backend: GpuBackend,
 }
 
 /// Historical data for graphs.
