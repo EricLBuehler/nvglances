@@ -5,7 +5,7 @@ edition = "2021"
 description = "A TUI system monitor with support for NVIDIA GPUs (CUDA/NVML) and Apple Silicon GPUs (Metal)"
 license = "MIT"
 repository = "https://github.com/EricLBuehler/nvglances"
-keywords = ["tui", "monitoring", "gpu", "nvidia", "metal", "apple-silicon"]
+keywords = ["monitoring", "gpu", "nvidia", "metal", "apple-silicon"]
 categories = ["command-line-utilities", "development-tools::profiling"]
 
 [dependencies]
